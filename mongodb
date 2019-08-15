@@ -1,0 +1,86 @@
+show dbs
+show collections
+
+db.users.findOne()
+db.users.find({filter},{fileds})
+db.users.find().limit(1).skip(10)
+
+db.users.find({user_name:"abcd"},{tweet_mentioned_count:1,_id:0})
+db.users.find({tweet_mentioned_count:{$gte:5}}).sort({user_name:1}).limit(5)
+db.users.find({tweet_text:/FIFA/}).count()
+db.users.find({tweet_text:{$regex:"FIFA"}}).count()
+db.user.find({$and:[{tweet_text:/FIFA/},{tweet_mentioned_count:4}]}).count()
+
+#pipeline stages:$project,$match,$group,$sort,$skip,$limit,$unwind...
+https://docs.mongodb.com/manual/reference/operator/aggregation-pipeline/
+
+db.users.aggregate([
+{$group:{_id:"$user_name",total:{$sum:"$tweet_mentioned_count"}}},
+{$sort:{total:-1}},
+{$limit:10}
+])
+
+var mapper=function(){emit(this.user_name,this.tweet_mentioned_count)};
+var reducer=function(key,values) {return Array.sum(values)};
+db.user.mapReduce(mapper,reducer,{out:"output"}).find().sort({"values":-1}).limit(10)
+
+#JOIN:
+## SELECT *, inventory_docs FROM orders WHERE 
+inventory_docs IN (SELECT * FROM inventory WHERE sku= orders.item)
+
+db.orders.aggregate([
+   {
+     $lookup:
+       {
+         from: "inventory",
+         localField: "item",
+         foreignField: "sku",
+         as: "inventory_docs"
+       }
+  }
+])
+
+##SELECT *, stockdata FROM orders 
+WHERE stockdata IN (SELECT warehouse, instock FROM warehouses
+WHERE stock_item= orders.item AND instock >= orders.ordered );
+
+db.orders.aggregate([
+   {
+      $lookup:
+         {
+           from: "warehouses",
+           let: { order_item: "$item", order_qty: "$ordered" },
+           pipeline: [
+              { $match:
+                 { $expr:
+                    { $and:
+                       [
+                         { $eq: [ "$stock_item",  "$$order_item" ] },
+                         { $gte: [ "$instock", "$$order_qty" ] }
+                       ]
+                    }
+                 }
+              },
+              { $project: { stock_item: 0, _id: 0 } }
+           ],
+           as: "stockdata"
+         }
+    }
+])
+
+
+
+
+#### user location is missing
+db.users.find({"user.Location":{$eq:null}}).count()
+db.users.find({"user.Location":null}).count()
+
+db.users.find({"user.Location":{$exists:false}}).count()  #check whether contains Location field
+
+### having friends more than follwers
+db.users.find({$where:"this.user.FriendsCount>this.user.FollowersCount"}).count()
+db.users.find({$expr:{$gt:["user.FriendsCount","users.FollowerCount"]}}).count()
+
+
+## tweet include http://
+db.users.find({"tweet_text":{$regex:"http://"}},{"tweet_text":1,"_id":0})
